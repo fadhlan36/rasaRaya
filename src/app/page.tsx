@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 px-6 text-center">
@@ -11,12 +13,18 @@ export default function Home() {
         Jelajahi Indonesia dari Sabang sampai Merauke, satu rasa dalam satu
         waktu.
       </p>
-      <a
-        href="#"
+      <Link
+        href="/daftar"
         className="rounded-full bg-sunshine px-8 py-3 font-bold text-forest shadow-md transition hover:scale-105"
       >
         Mulai Petualangan
-      </a>
+      </Link>
+      <Link
+        href="/masuk"
+        className="text-sm font-semibold text-ocean underline"
+      >
+        Sudah punya akun? Masuk
+      </Link>
     </main>
   );
 }

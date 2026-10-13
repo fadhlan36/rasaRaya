@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  PLAYER
+  ADMIN
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ProgressStatus {
+  UNLOCKED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  MATCHING
+  ORDERING
+}
+
+enum SectionKind {
+  INGREDIENTS
+  HISTORY
+  TRADITION
+  CULTURE
+}
+
+// Pembeda klaim sesuai bagian 14 PRD
+enum ClaimType {
+  DOCUMENTED
+  ORAL_TRADITION
+  LEGEND
+  DISPUTED
+  UNKNOWN
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  nickname           String?
+  role               Role      @default(PLAYER)
+  xp                 Int       @default(0)
+  onboardedAt        DateTime?
+  journeyCompletedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  progress     UserProgress[]
+  attempts     QuizAttempt[]
+  collection   UserFoodCollection[]
+  xpLedger     XPLedger[]
+  achievements UserAchievement[]
+}
+
+model Chapter {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String?
+  order       Int
+  status      ContentStatus @default(DRAFT)
+  regions     Region[]
+
+  @@index([order])
+}
+
+// "Region" = checkpoint di peta
+model Region {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  order        Int
+  intro        String
+  illustration String?
+  mapX         Float // posisi di peta, 0-100 (persen)
+  mapY         Float
+  status       ContentStatus @default(DRAFT)
+  chapterId    String
+  chapter      Chapter       @relation(fields: [chapterId], references: [id])
+
+  foods    Food[]
+  stories  Story[]
+  quizzes  Quiz[]
+  progress UserProgress[]
+
+  @@index([chapterId])
+  @@index([order])
+}
+
+model Food {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  summary      String
+  funFact      String?
+  illustration String?
+  status       ContentStatus @default(DRAFT)
+  regionId     String
+  region       Region        @relation(fields: [regionId], references: [id])
+
+  stories   Story[]
+  collected UserFoodCollection[]
+
+  @@index([regionId])
+}
+
+model Story {
+  id       String        @id @default(cuid())
+  title    String
+  order    Int           @default(0)
+  status   ContentStatus @default(DRAFT)
+  regionId String
+  region   Region        @relation(fields: [regionId], references: [id])
+  foodId   String?
+  food     Food?         @relation(fields: [foodId], references: [id])
+
+  sections   StorySection[]
+  references SourceReference[]
+
+  @@index([regionId])
+}
+
+model StorySection {
+  id        String      @id @default(cuid())
+  storyId   String
+  story     Story       @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  order     Int
+  kind      SectionKind
+  claimType ClaimType   @default(DOCUMENTED)
+  heading   String
+  body      String
+
+  @@index([storyId])
+}
+
+model SourceReference {
+  id        String  @id @default(cuid())
+  storyId   String
+  story     Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  title     String
+  author    String?
+  publisher String?
+  year      Int?
+  url       String?
+  reviewed  Boolean @default(false)
+
+  @@index([storyId])
+}
+
+model Quiz {
+  id        String        @id @default(cuid())
+  title     String
+  regionId  String? // null untuk final challenge
+  region    Region?       @relation(fields: [regionId], references: [id])
+  isFinal   Boolean       @default(false)
+  passScore Int           @default(60)
+  xpReward  Int           @default(100)
+  status    ContentStatus @default(DRAFT)
+
+  questions Question[]
+  attempts  QuizAttempt[]
+
+  @@index([regionId])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  order       Int
+  type        QuestionType
+  prompt      String
+  options     Json
+  answerKey   Json // HANYA dibaca server, tidak pernah dikirim ke frontend
+  explanation String
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizId    String
+  quiz      Quiz     @relation(fields: [quizId], references: [id])
+  answers   Json
+  score     Int
+  passed    Boolean
+  createdAt DateTime @default(now())
+
+  @@index([userId, quizId])
+}
+
+model UserProgress {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  regionId    String
+  region      Region         @relation(fields: [regionId], references: [id])
+  status      ProgressStatus @default(UNLOCKED)
+  storyReadAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([userId, regionId])
+}
+
+model UserFoodCollection {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodId      String
+  food        Food     @relation(fields: [foodId], references: [id])
+  collectedAt DateTime @default(now())
+
+  @@unique([userId, foodId])
+}
+
+// Constraint unik di bawah ini yang mencegah XP ganda untuk penyelesaian yang sama
+model XPLedger {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount     Int
+  reason     String
+  sourceType String
+  sourceId   String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, sourceType, sourceId])
+  @@index([userId])
+}
+
+model Achievement {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String
+  icon        String?
+
+  users UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  earnedAt      DateTime    @default(now())
+
+  @@unique([userId, achievementId])
+}
